@@ -1,0 +1,26 @@
+# The library CI installs with the wheel it just built, into the libraries
+# folder and into a sketch, then builds both sketches with arduino-cli.
+
+name: demo
+description: A library for the end to end test
+repository: https://github.com/nimaltd/arduino-installer
+license: Apache-2.0
+category: math
+
+requires:
+  arduino_installer: 1.0.0
+  libraries:
+    - helper
+
+install:
+  layout: mirror
+
+files:
+  headers:
+    - src/demo.h
+    - src/demo_config.h
+  sources:
+    - src/demo.c
+
+arduino:
+  architectures: [avr]
