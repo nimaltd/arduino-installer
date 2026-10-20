@@ -189,7 +189,7 @@ A library installed into a sketch can need something made that no file can carry
 ```
 Run
   make-key     Make the device's key, device_key.h
-               python scripts/make_key.py device_key.h
+               python tools/make_key.py device_key.h
                Run it? [Y/n]:
 ```
 
@@ -354,7 +354,7 @@ A repository of an organisation can need one more step: an organisation that ask
 
 Put an `installer.yml` at the root of the repository. Any library can have one, whoever wrote it, and the one file serves arduino-installer and the other installers alike: each reads its own keys and leaves the others' alone.
 
-Every key arduino-installer reads is below, each with what it does. Only `name` and `files` are required; leave out what your library does not need. For a working one to copy, see [arduino-installer-example](https://github.com/nimaltd/arduino-installer-example).
+Every key arduino-installer reads is below, each with what it does, as a manifest asking for 2.1.0 writes it. Only `name` and its `headers` or `sources` are required; leave out what your library does not need. What changed in 2.1.0, and how a manifest from before reads, is under [Paths, from 2.1.0](#paths-from-210). For a working one to copy, see [arduino-installer-example](https://github.com/nimaltd/arduino-installer-example).
 
 ```yaml
 name: example                      # the library's name, and its folder
@@ -370,7 +370,7 @@ category: storage                  # sensor, storage, display, communication, wi
 provides: []                       # what it gives other libraries: [rtos] for an RTOS
 
 requires:
-  arduino_installer: 2.0.0         # the oldest arduino-installer that reads this file
+  arduino_installer: 2.1.0         # the oldest arduino-installer that reads this file
   libraries:                       # other libraries, installed first into the libraries
     - osal >= 1.0.0                # folder; no owner means nimaltd
     - owner/lib                    # anyone else's, as owner/name
@@ -382,41 +382,43 @@ requires:
     - type: i2c                    # what it is
       note: 400 kHz                # how to set it up
 
-install:
-  layout: mirror                   # mirror keeps the repository's folders,
-                                   # flat (the default) puts every file at the top
-
-files:
-  headers:                         # .h files; the first is the one to #include
-    - src/example.h
-    - src/example_config.h         # its settings, in USER CODE lines kept on update
-  sources:                         # .c and .cpp files, which Arduino builds
-    - src/example.cpp
-    - from: src/port/spi.c         # a file that goes somewhere of its own,
-      to: src/port/spi.c           # whatever the layout says
+headers:                           # .h files; the first is the one to #include
+  - src/example.h                  # every file keeps its path: the library's src/example.h
+  - src/example_config.h           # its settings, in USER CODE lines kept on update
+sources:                           # .c and .cpp files, which Arduino builds
+  - src/example.cpp
+  - src/port/*.c                   # a wildcard, matched the way a shell would:
+                                   # * inside one folder, ** across any number of them
+  - from: extra/spi.c              # a file that goes somewhere of its own,
+    to: src/port/spi.c             # in the library's folder
 
 options:                           # parts the user chooses at install
   uptime:                          # the name typed after --with
     description: Uptime in hours, minutes and seconds  # the question asked
     libraries: []                  # libraries this part needs, installed first
-    files:                         # its files, written like files above
-      sources:
-        - src/example_uptime.cpp
+    sources:                       # its files, written like headers and sources above
+      - src/example_uptime.cpp
 
 extras:                            # copied as they are, never compiled
   - LICENSE.md                     # LICENSE.md and NOTICE are the default,
   - NOTICE                         # so leave this out if that is all
-  - README.md
+  - README.md                      # in the library's folder
+  - root: tools                    # 2.1.0: tools/ into the sketch's folder instead, as the
+                                   # library's own, written again on every install, into a
+                                   # sketch only
 
 once:                              # the sketch's own files, installed into a sketch only:
                                    # made when missing, then the user's
+  - data/example.json              # 2.1.0: a path alone lands at that path in the sketch
   - from: templates/arduino_secrets.h  # the file in the repository, to the sketch's folder
+    to: arduino_secrets.h          # to: another place in the sketch
 
 run:                               # steps run once the files are in, each asked about
                                    # first, installed into a sketch only
   - label: make-key                # the name typed after --run
     description: Make the device's key, device_key.h  # shown with the question
-    script: scripts/make_key.py    # Python, run with the installer's own Python,
+    script: tools/make_key.py      # Python, run with the installer's own Python, from the
+                                   # sketch's folder, or {library}/... in the library's
     args: [device_key.h]           # or command: [program, arguments], with no shell
     unless: device_key.h           # skipped when this file is in the sketch already
 
@@ -441,16 +443,48 @@ Leave `version` out. The installer reads the version from the `@version` tag in 
 
 A library that uses anything 2.0.0 brings says `requires.arduino_installer: 2.0.0`: `once` files in the sketch's folder, `run`, or a library it needs given with an `@` or a `manifest`. The version also decides where `once` files go. A manifest asking for 2.0.0 or newer puts them in the sketch's folder, and one asking for less keeps the meaning it was written for, the library's own folder, so a release tagged before 2.0.0 still installs as it did.
 
+### Paths, from 2.1.0
+
+A manifest asking for `requires.arduino_installer: 2.1.0` has one rule for every path that names a place in the sketch's folder: it starts at the sketch's folder. `{library}` at its start names the library's own folder instead, wherever `--dir` put it. A path that names a file of the library, under `headers`, `sources`, `extras` or `once`, or as a `from`, is a path in the repository, as always.
+
+And every file is copied to the path it has, unchanged, unless a `to` says otherwise, so a path alone is all an entry needs: `src/example.c` lands at `src/example.c` in the library's folder, so `install.layout` is gone, `flat` is refused and `mirror` says nothing new. A `once` file lands at its own path in the sketch's folder: `- data/example.json` at `data/example.json`, where before 2.1.0 it was written `- from: data/example.json` and took only its name. And `headers` and `sources` need no `files` around them; `files` still reads, but not both at once.
+
+A `to` gives a file another place, where its list puts files. Under `headers`, `sources` and `extras` that is the library's folder, so `- from: src/example.h, to: example.h` lands at the top of it, and the include path follows. Under `once` it is the sketch's folder, where every `once` file lands. A `root` puts an extra in the sketch's folder instead of the library's: `- root: tools` takes the library's `tools/` to the sketch's `tools/`. Code has no `root`, since it is built in the library's folder, and a `once` file needs none. Wherever a `from` would be the same path as its `to` or `root`, leave it out: `- root: tools` is `- from: tools, root: tools`.
+
+| Key | Starts at |
+|---|---|
+| `headers`, `sources`, `extras`, `once`, `from` | the library's repository |
+| `to` under `headers`, `sources` and `extras` | the library's folder |
+| `once.to`, `extras.root` | the sketch's folder |
+| `run.script`, `run.unless` | the sketch's folder, or the library's with `{library}/` |
+| `{library}` in `run.args` and `run.command` | the library's folder, as the step names it from the sketch's folder |
+
+An extra with a `root` lands in the sketch's folder, as the library's own: a file at `root` itself, the files of a folder under it with their path below it, those a wildcard matches under it with their names; an extra's `to` places them the same way in the library's folder. It is written again on every install, a file of it the new version no longer ships is removed, and an uninstall takes it out. A file already there that the installer did not put there is the user's, and is never written over: the install stops and says so.
+
+In every manifest, a wildcard matches the whole path, the way a shell does, and the same whether the library comes from GitHub or a folder: `*` and `?` stay inside one folder, `**` crosses any number of them, none included, and `[ab]` is one of a set. So `*.c` is the `.c` files at the top, `src/*.c` those in `src`, and `src/**/*.c` every one below `src`, however deep. And two files of the code that would land in one place, such as two `util.c` that `flat` put side by side, are refused when the manifest is read, where the second used to replace the first without a word.
+
+```yaml
+extras:
+  - root: tools                    # tools/keygen.py and tools/keygen.md, into the sketch's folder
+run:
+  - label: signing-key
+    script: tools/keygen.py        # from the sketch's folder
+    unless: sign_key.pem
+```
+
+A step's script has to be one the install puts in place, an extra with a `root` or a `once` file, or with `{library}`, a file of the library's folder; anything else is refused when the manifest is read. A manifest asking for less than 2.1.0 keeps the meaning it was written for: its script is found in the library as it was fetched, and `{library}` is left as it is written.
+
 ### Files of the sketch's own
 
 A file that belongs to the sketch rather than to the library goes under `once`, such as an `arduino_secrets.h` for the user to fill in. It is created in the sketch's folder when it is missing, and is the user's from then on: never replaced by an update, never removed by an uninstall.
 
 ```yaml
 once:
-  - from: templates/arduino_secrets.h  # to: the file's own name, arduino_secrets.h
+  - from: templates/arduino_secrets.h
+    to: arduino_secrets.h              # a place of its own, in the sketch's folder
 ```
 
-`from` is a file of the library's repository, and `to` its place from the sketch's folder, its own name when left out. Each is checked before anything is written: `to` stays inside the sketch, is none of its `.ino` files, and does not point into the library's own folder, which every install replaces. Two entries with one `to` are refused. And `from`, like every file a manifest names, stays inside the library: no `..`, no absolute path, no link leading out of it.
+`from` is a file of the library's repository, and `to` its place from the sketch's folder. From 2.1.0 a path alone will do, `- arduino_secrets.h`, landing at that same path, and a `to` is only needed for another place; before, each entry is a mapping with a `from`, and a `to` left out meant its own name, at the top. A `once` file has no `root`: it always lands in the sketch's folder. Each is checked before anything is written: `to` stays inside the sketch, is none of its `.ino` files, and does not point into the library's own folder, which every install replaces. Two entries with one `to` are refused. And `from`, like every file a manifest names, stays inside the library: no `..`, no absolute path, no link leading out of it.
 
 The libraries folder belongs to no sketch, so there a library with `once` files stops before anything is written, saying to install it into a sketch. Settings belong in the configuration header's USER CODE lines, which work in both places.
 
@@ -459,17 +493,19 @@ The libraries folder belongs to no sketch, so there a library with `once` files 
 Something no file can carry, such as a key made fresh for each device, is made by a step under `run`. It runs once the library's files are in, in the sketch's folder:
 
 ```yaml
+extras:
+  - root: tools                        # tools/make_key.py, into the sketch's folder
 run:
   - label: make-key
     description: Make the device's key, device_key.h
-    script: scripts/make_key.py
+    script: tools/make_key.py          # the sketch's tools/make_key.py
     args: [device_key.h]
     unless: device_key.h
 ```
 
 - `label` names the step, typed after `--run`, in lower case letters, digits, `_` and `-`.
 - `description` is shown with the question.
-- `script` is a Python file of the library, run with the installer's own Python, so it works on every computer the installer does. Or `command`, a program and its arguments as a list, `[openssl, rand, -out, device.key, "32"]`, run as it is, with no shell. One of the two, never both.
+- `script` is a Python file, run with the installer's own Python, so it works on every computer the installer does. From 2.1.0 it is a path from the sketch's folder, where an extra with a `root` or a `once` file put it, or `{library}/...` in the library's folder, see [Paths, from 2.1.0](#paths-from-210); before, it is a file of the library's repository. Or `command`, a program and its arguments as a list, `[openssl, rand, -out, device.key, "32"]`, run as it is, with no shell. One of the two, never both.
 - `args` are added after either.
 - `unless` names a file the step makes, from the sketch's folder. When it is there, the step is skipped without a question.
 
@@ -496,13 +532,13 @@ Without an `@`, a library comes from its repository's default branch. The last f
 
 ### What Arduino needs of a library
 
-- **Keep the code in `src/`, with `layout: mirror`.** Arduino builds `src/` and every folder in it, and puts `src/` on the include path. A library with no `src/` folder is built from the files at its top instead.
+- **Keep the code in `src/`, with `layout: mirror`, or from 2.1.0 with no layout at all, since every file keeps its path.** Arduino builds `src/` and every folder in it, and puts `src/` on the include path. A library with no `src/` folder is built from the files at its top instead.
 - **Headers beside the code that includes them.** In a sketch's `src` folder nothing is on the include path, so `#include "example.h"` in `example.cpp` works only when the two are in the same folder. A header in another folder of the library is included by its path from there.
 - **`extern "C"` in every header of C code.** A sketch is C++, and without it the linker cannot find a function of a `.c` file.
 - **Settings in a configuration header**, between `USER CODE` lines the installer keeps, since Arduino has no other place for them.
 - **No `install.defines`.** Arduino has no defines for a whole build, so the installer warns about them and sets nothing. Put them in the configuration header instead.
 
-A library made for Arduino that ships its own `library.properties`, listed under `extras` or `files` so it is installed, keeps it: the installer writes one only for a library that has none.
+A library made for Arduino that ships its own `library.properties`, listed under `extras`, `headers` or `sources` so it is installed, keeps it: the installer writes one only for a library that has none.
 
 ---
 
