@@ -217,6 +217,20 @@ class Arduino(Target):
         """What a library needs goes into the libraries folder, where any library finds it."""
         return self.libraries
 
+    no_once_root = ("The libraries folder is shared by every sketch, so it has no place for them. "
+                    "Install it into a sketch, with --into sketch, to get them.")
+
+    def once_root(self, project_root):
+        """
+        The sketch, for a library installed into one. The libraries folder is no
+        sketch's own, so there a once file, or a run step, has nowhere to go.
+        """
+        return None if self._in_libraries(project_root) else project_root
+
+    def managed_files(self, project_root, library):
+        """The sketch's own .ino files, which a once file must never be."""
+        return [self.record_name, "*.ino"]
+
     def _in_libraries(self, project_root):
         return Path(project_root).resolve() == Path(self.libraries).resolve()
 

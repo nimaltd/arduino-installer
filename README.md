@@ -4,7 +4,7 @@ Installs embedded C and C++ libraries for Arduino, from GitHub, from a zip, or f
 
 It puts a library where Arduino finds it, the way you choose: in the libraries folder of your sketchbook, where Library Manager installs to, for every sketch, or in the `src` folder of one sketch, for that sketch alone. A library written for any project gets the `library.properties` Arduino knows it by, the libraries it needs go in first, and its settings are kept through every update.
 
-It works with any library that has an `installer.yml` at the root of its repository. I wrote it for my own [NimaLTD](https://github.com/nimaltd) libraries, and they all have one, but nothing in it is tied to them: add an `installer.yml` to yours, as shown [below](#for-someone-writing-a-library), and it installs the same way. The same file serves [stm32-installer](https://github.com/nimaltd/stm32-installer), [zephyr-installer](https://github.com/nimaltd/zephyr-installer) and [esp32-installer](https://github.com/nimaltd/esp32-installer).
+It works with any library that has an `installer.yml` at the root of its repository. I wrote it for my own [NimaLTD](https://github.com/nimaltd) libraries, and they all have one, but nothing in it is tied to them: add an `installer.yml` to yours, as shown [below](#for-someone-writing-a-library), and it installs the same way. The same file serves [stm32-installer](https://github.com/nimaltd/stm32-installer), [zephyr-installer](https://github.com/nimaltd/zephyr-installer), [esp32-installer](https://github.com/nimaltd/esp32-installer) and [pio-installer](https://github.com/nimaltd/pio-installer).
 
 The Arduino IDE, version 1 or 2, and arduino-cli all find what it installs, since both places are ones Arduino itself looks in.
 
@@ -30,7 +30,44 @@ It builds for any board, and prints on Serial. Its README walks through both pla
 
 To update it later, `pip install --upgrade arduino-installer`. To remove it, `pip uninstall arduino-installer`.
 
+When a newer arduino-installer is out, the last line of a run says so, with that command. It asks PyPI at most once a day, waits no more than two seconds for an answer, and says nothing when there is none. `--no-update-check` turns it off, and so does `INSTALLER_NO_UPDATE_CHECK` set to anything. On a build server, where `CI` is set, it is off already.
+
 On Windows, if `arduino-installer` is not found after installing, pip put it in a folder that is not on your PATH. `python -m arduino_installer owner/example` runs the same thing.
+
+### Every command
+
+Each command with `owner/example` standing for the library. An update is the install again. Every option is explained under [Options](#options).
+
+| To | Run |
+|---|---|
+| Install the installer | `pip install arduino-installer` |
+| Update the installer | `pip install --upgrade arduino-installer` |
+| Remove the installer | `pip uninstall arduino-installer` |
+| See which version you have | `arduino-installer --version` |
+| See every option | `arduino-installer --help` |
+| Install a library from GitHub | `arduino-installer owner/example` |
+| Install one release of it, a branch or a commit | `arduino-installer owner/example@v2.0.0` |
+| Install it by its GitHub address | `arduino-installer https://github.com/owner/example` |
+| Install it from a downloaded zip | `arduino-installer D:/Downloads/example-main.zip` |
+| Install it from a folder on disk | `arduino-installer D:/Downloads/example-main` |
+| Install several at once, such as a library and the zip of one it needs | `arduino-installer D:/Downloads/example-main.zip D:/Downloads/osal-main.zip` |
+| Install into a folder you choose, without the question | `arduino-installer owner/example --dir example2` |
+| Install into a sketch you are not running from | `arduino-installer owner/example --project D:/Arduino/blink` |
+| Install into the libraries folder, for every sketch | `arduino-installer owner/example --into libraries` |
+| Install into this sketch's src folder, for it only | `arduino-installer owner/example --into sketch` |
+| Use a sketchbook the installer does not find by itself | `arduino-installer owner/example --sketchbook D:/Arduino` |
+| Take an option of the library without the question | `arduino-installer owner/example --with uptime` |
+| Leave an option out, or take it out of a library already installed | `arduino-installer owner/example --without uptime` |
+| Run a step of the library without the question | `arduino-installer owner/example --run make-key` |
+| Leave a step unrun, without the question | `arduino-installer owner/example --no-run make-key` |
+| Answer every question with the answer offered, and run every step, for a script | `arduino-installer owner/example --yes` |
+| Install from a private repository | `arduino-installer owner/example --key github_pat_...` |
+| Leave out the check for a newer installer | `arduino-installer owner/example --no-update-check` |
+| Update a library | `arduino-installer owner/example` |
+| Uninstall a library | `arduino-installer --uninstall example` |
+| Uninstall several, in any order | `arduino-installer --uninstall osal example` |
+| Uninstall from this sketch, when the libraries folder has it too | `arduino-installer --uninstall example --into sketch` |
+| Run it when `arduino-installer` is not found | `python -m arduino_installer owner/example` |
 
 ### Where a library goes
 
@@ -117,7 +154,7 @@ Requirements
           In a sketch's src folder one library cannot find another. In the libraries folder every library and sketch can.
 ```
 
-One already in the libraries folder at a version that will do is left alone. Everything is fetched before anything is installed, so when a library cannot be had, nothing is changed.
+It comes from the release the library names for it, or else from its default branch. One already in the libraries folder at a version that will do is left alone. Everything is fetched before anything is installed, so when a library cannot be had, nothing is changed.
 
 ### Settings
 
@@ -130,6 +167,37 @@ Arduino has no settings menu of its own for a library, so a library's settings a
 ```
 
 Change them there. Every install and update keeps what is between those lines. In the libraries folder there is one set, for every sketch; installed into a sketch, the sketch has its own.
+
+### Files that become yours
+
+A library installed into a sketch can bring files that belong to the sketch rather than to the library, such as an `arduino_secrets.h` for your network's name and password: a start, made for you to fill in. Each is created in the sketch's folder only when it is not there:
+
+```
+Files
+  written src/example/src/example.h
+  created arduino_secrets.h  yours from now on
+```
+
+From then on it is yours. An update never writes over it, and says so with `kept arduino_secrets.h  yours`. An uninstall leaves it where it is, with `kept arduino_secrets.h  yours, not removed`. A library can never put such a file over the sketch's `.ino` files, nor outside the sketch's folder.
+
+The libraries folder is shared by every sketch, so it has no place for such files. A library that brings them, installed there, stops before anything is written and says to install it into a sketch, with `--into sketch`.
+
+### Steps a library runs
+
+A library installed into a sketch can need something made that no file can carry, such as a key made fresh for each device. It names a step for that, and once its files are in, the installer shows you exactly what will run, and asks:
+
+```
+Run
+  make-key     Make the device's key, device_key.h
+               python scripts/make_key.py device_key.h
+               Run it? [Y/n]:
+```
+
+Enter runs it, in the sketch's folder. A Python script runs with the same Python as the installer, so it works the same on every computer. `n` leaves it, and the output says how to run it later. In a script, where nobody can answer, it is not run.
+
+Nothing in a library's `installer.yml` can skip the question. Only you can: `--run make-key` runs that step without asking, `--no-run make-key` leaves it, and `--yes` runs every step and takes the offered answer to every other question, for a script or a build server.
+
+A step that makes a file can name it, and when that file is already in the sketch the step is skipped without a question, so a second install never makes a second key. A step that names no file and ran before is not asked about again either, until the library changes what it runs. When a step fails, what was installed stays installed, and the installer ends with exit code 1, so a script notices. Steps need a sketch to run in. In the libraries folder they are not run, the install goes ahead, and the output says to install into a sketch to have them run.
 
 ### What you see
 
@@ -171,11 +239,14 @@ The argument can be any of these, and you can give several at once:
 | You have | You type |
 |---|---|
 | Nothing yet, and internet | `arduino-installer owner/example` |
+| One release of it, a branch, or a commit | `arduino-installer owner/example@v2.0.0` |
 | The library's GitHub address | `arduino-installer https://github.com/owner/example` |
 | The zip from GitHub's **Download ZIP** | `arduino-installer D:/Downloads/example-main.zip` |
 | That zip unpacked, anywhere on disk | `arduino-installer D:/Downloads/example-main` |
 
 A bare name with no owner, like `example`, is a NimaLTD library, `nimaltd/example` on GitHub, unless a folder of that name exists where you run it, in which case the folder is used. A path that does not exist is reported as missing rather than looked up on GitHub.
+
+From GitHub, a library comes from its repository's default branch, the one GitHub shows first, whatever the repository calls it. After an `@`, a tag, a branch or a commit takes exactly that instead, and so does a GitHub address ending in `/tree/v2.0.0`. Every file comes from one commit, even when the branch moves on while they download, and the record keeps that commit, so you can always tell what you built with.
 
 ### Options
 
@@ -186,18 +257,22 @@ A bare name with no owner, like `example`, is a NimaLTD library, `nimaltd/exampl
 | `--sketchbook D:/Arduino` | The sketchbook folder, the one holding `libraries`, when the installer should not look for it |
 | `--project D:/Arduino/blink` | The sketch's folder, when you are not running from it |
 | `--dir example2` | The folder to install into, for one library. Asked for when not given, with the library's name as the answer if you just press Enter, or the folder it is already in |
-| `--ref v2.0.0` | A tag, a branch or a commit to take from GitHub. When not given, `main`, or `master` for a repository that has no `main` |
+| `--ref v2.0.0` | A tag, a branch or a commit to take from GitHub, the same as `owner/example@v2.0.0`. When not given, the repository's default branch |
 | `--key github_pat_...` | A GitHub token, for a library in a private repository. See [A private repository](#a-private-repository) |
 | `--uninstall example` | Take the library out. See [Uninstalling a library](#uninstalling-a-library) |
 | `--with uptime` | Take this part of the library without being asked. Give it once for each part |
 | `--without uptime` | Leave this part out, or take it out of a library already installed |
+| `--run make-key` | Run this step of the library without being asked. Give it once for each step. See [Steps a library runs](#steps-a-library-runs) |
+| `--no-run make-key` | Leave this step unrun, without being asked |
+| `--yes` | Take the answer each question offers, without asking, and run every step. For a script or a build server |
+| `--no-update-check` | Do not ask PyPI whether a newer arduino-installer is out |
 | `--version` | Show which version of the installer you have, and do nothing else |
 
 ### Updating a library
 
 Run the same command again. Every file of the library is replaced, so an update updates, and `library.properties` is written again from the new `installer.yml`. What you wrote between `USER CODE BEGIN` and `USER CODE END` is kept. Outside those lines, the next install replaces it, and when that would lose something of yours the file is saved beside it first, as a `.bak`.
 
-The record of what is installed, and where, is `.arduino-installer.json`: in the libraries folder for what is there, and in a sketch for what is in it.
+The record of what is installed, and where, is `.arduino-installer.json`: in the libraries folder for what is there, and in a sketch for what is in it. For each library it also keeps where it came from, down to the commit, and the steps that ran.
 
 ### Uninstalling a library
 
@@ -205,7 +280,7 @@ The record of what is installed, and where, is `.arduino-installer.json`: in the
 arduino-installer --uninstall example
 ```
 
-Run from a sketch, it is taken out of the sketch when the sketch has it, and out of the libraries folder otherwise. `--into` says which, when it is in both. Its files go, and its `library.properties`. What was yours is saved before it goes, as a `.bak` beside it: a configuration header with your settings in it, or any file of the library you changed by hand. A file you put in the library's folder yourself is left where it is, and the folder with it.
+Run from a sketch, it is taken out of the sketch when the sketch has it, and out of the libraries folder otherwise. `--into` says which, when it is in both. Its files go, and its `library.properties`. What was yours is saved before it goes, as a `.bak` beside it: a configuration header with your settings in it, or any file of the library you changed by hand. A file you put in the library's folder yourself is left where it is, and the folder with it, and so are the [files that became yours](#files-that-become-yours).
 
 A library another one needs stays, and the installer says which needs it. One that came into the libraries folder because a library in a sketch needed it stays there too, since other sketches may use it.
 
@@ -275,8 +350,6 @@ A repository of an organisation can need one more step: an organisation that ask
 
 ---
 
----
-
 ## For someone writing a library
 
 Put an `installer.yml` at the root of the repository. Any library can have one, whoever wrote it, and the one file serves arduino-installer and the other installers alike: each reads its own keys and leaves the others' alone.
@@ -297,10 +370,14 @@ category: storage                  # sensor, storage, display, communication, wi
 provides: []                       # what it gives other libraries: [rtos] for an RTOS
 
 requires:
-  arduino_installer: 1.0.0         # the oldest arduino-installer that reads this file
+  arduino_installer: 2.0.0         # the oldest arduino-installer that reads this file
   libraries:                       # other libraries, installed first into the libraries
     - osal >= 1.0.0                # folder; no owner means nimaltd
     - owner/lib                    # anyone else's, as owner/name
+    - owner/lib@v1.2.0             # a tag, branch or commit, not its default branch
+    - source: owner/other@v2.9.3   # a repository with no installer.yml of its own,
+      manifest: manifests/other.yml  # with one this library carries for it
+      minimum: 2.9.0               # the oldest version that will do
   peripherals:                     # hardware it uses, named to the user
     - type: i2c                    # what it is
       note: 400 kHz                # how to set it up
@@ -331,6 +408,18 @@ extras:                            # copied as they are, never compiled
   - NOTICE                         # so leave this out if that is all
   - README.md
 
+once:                              # the sketch's own files, installed into a sketch only:
+                                   # made when missing, then the user's
+  - from: templates/arduino_secrets.h  # the file in the repository, to the sketch's folder
+
+run:                               # steps run once the files are in, each asked about
+                                   # first, installed into a sketch only
+  - label: make-key                # the name typed after --run
+    description: Make the device's key, device_key.h  # shown with the question
+    script: scripts/make_key.py    # Python, run with the installer's own Python,
+    args: [device_key.h]           # or command: [program, arguments], with no shell
+    unless: device_key.h           # skipped when this file is in the sketch already
+
 arduino:                           # read by arduino-installer only, for library.properties
   architectures: [avr, esp32]      # the boards it runs on; ["*"], any, when left out
   category: Data Storage           # Arduino's own category; when left out, the nearest
@@ -344,11 +433,66 @@ arduino:                           # read by arduino-installer only, for library
 
 Arduino's categories are Display, Communication, Signal Input/Output, Sensors, Device Control, Timing, Data Storage, Data Processing and Other.
 
-Keys only the other installers read, such as `requires.installer`, `zephyr` and `esp32`, can stay in the same file. This installer skips them.
+Keys only the other installers read, such as `requires.stm32_installer`, `zephyr` and `esp32`, can stay in the same file. This installer skips them.
 
 Leave `version` out. The installer reads the version from the `@version` tag in the file comment of the first header listed, so it is written in the code and nowhere else.
 
 `requires.arduino_installer` is the oldest arduino-installer that reads the file correctly. It is checked before anything else in the file is read, so an older installer stops with a message saying to update, rather than read the file wrongly. Write it as three numbers, `1.0.0`: unquoted, YAML reads `1.10` as the decimal number `1.1`, and that is refused.
+
+A library that uses anything 2.0.0 brings says `requires.arduino_installer: 2.0.0`: `once` files in the sketch's folder, `run`, or a library it needs given with an `@` or a `manifest`. The version also decides where `once` files go. A manifest asking for 2.0.0 or newer puts them in the sketch's folder, and one asking for less keeps the meaning it was written for, the library's own folder, so a release tagged before 2.0.0 still installs as it did.
+
+### Files of the sketch's own
+
+A file that belongs to the sketch rather than to the library goes under `once`, such as an `arduino_secrets.h` for the user to fill in. It is created in the sketch's folder when it is missing, and is the user's from then on: never replaced by an update, never removed by an uninstall.
+
+```yaml
+once:
+  - from: templates/arduino_secrets.h  # to: the file's own name, arduino_secrets.h
+```
+
+`from` is a file of the library's repository, and `to` its place from the sketch's folder, its own name when left out. Each is checked before anything is written: `to` stays inside the sketch, is none of its `.ino` files, and does not point into the library's own folder, which every install replaces. Two entries with one `to` are refused. And `from`, like every file a manifest names, stays inside the library: no `..`, no absolute path, no link leading out of it.
+
+The libraries folder belongs to no sketch, so there a library with `once` files stops before anything is written, saying to install it into a sketch. Settings belong in the configuration header's USER CODE lines, which work in both places.
+
+### Steps run after the install
+
+Something no file can carry, such as a key made fresh for each device, is made by a step under `run`. It runs once the library's files are in, in the sketch's folder:
+
+```yaml
+run:
+  - label: make-key
+    description: Make the device's key, device_key.h
+    script: scripts/make_key.py
+    args: [device_key.h]
+    unless: device_key.h
+```
+
+- `label` names the step, typed after `--run`, in lower case letters, digits, `_` and `-`.
+- `description` is shown with the question.
+- `script` is a Python file of the library, run with the installer's own Python, so it works on every computer the installer does. Or `command`, a program and its arguments as a list, `[openssl, rand, -out, device.key, "32"]`, run as it is, with no shell. One of the two, never both.
+- `args` are added after either.
+- `unless` names a file the step makes, from the sketch's folder. When it is there, the step is skipped without a question.
+
+The step sees where things are in its environment: `INSTALLER_PROJECT`, the sketch's folder, `INSTALLER_LIBRARY`, the library's folder in it, `INSTALLER_NAME` and `INSTALLER_VERSION`, the library's, and `INSTALLER`, `arduino-installer`.
+
+The user is always asked, and is shown exactly what will run. Nothing in the manifest can turn that off, only the user, with `--run` or `--yes`. A step with no `unless` that ran before is not asked about again until what it runs changes, so make it safe to run twice anyway. A step that fails leaves the install as it is and ends the run with exit code 1. Steps need a sketch to run in: in the libraries folder they are left unrun, as a no would leave them, and the install goes ahead.
+
+### A library it needs
+
+`requires.libraries` lists the libraries yours needs, each installed first into the libraries folder when it is missing or older than the version given:
+
+```yaml
+requires:
+  libraries:
+    - osal >= 1.0.0                    # no owner means nimaltd: github.com/nimaltd/osal
+    - someone/lib                      # anyone else's, by owner and name
+    - someone/lib@v1.2.0               # exactly this tag, branch or commit
+    - source: someone/plain@v2.0.0
+      manifest: manifests/plain.yml    # an installer.yml for a repository without one
+      minimum: 2.0.0
+```
+
+Without an `@`, a library comes from its repository's default branch. The last form installs a library whose repository has no `installer.yml` of its own: yours carries one for it, at the path given, written as if it sat at the root of that repository. A library from Library Manager is not one of these: name it under `arduino.depends`.
 
 ### What Arduino needs of a library
 

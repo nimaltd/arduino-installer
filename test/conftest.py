@@ -1,6 +1,7 @@
 """Shared fixtures: a throwaway library repository, sketchbook and sketch."""
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +33,10 @@ int {name}_answer(void);
 }
 #endif
 """
+
+
+# No test asks PyPI whether a newer installer is out.
+os.environ["INSTALLER_NO_UPDATE_CHECK"] = "1"
 
 
 @pytest.fixture(autouse=True)
