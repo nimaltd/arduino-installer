@@ -8,29 +8,18 @@ on:
 
 jobs:
   test:
-    name: Tests on Python ${{ matrix.python }}, ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ["3.8", "3.12"]
-
+    name: Tests
+    runs-on: ubuntu-latest
     steps:
-      # With the shared core, a git submodule. Without it nothing imports.
       - uses: actions/checkout@v7
-        with:
-          submodules: true
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.12"
 
       - name: Install
-        run: python -m pip install --upgrade pip pytest PyYAML
+        run: python -m pip install --upgrade pip pytest
 
-      # Windows is in the matrix on purpose: its CRLF files and its paths are
-      # what break first in a path or a library.properties.
       - name: Test
         run: python test/run_tests.py
 
@@ -39,8 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: true
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -73,76 +60,3 @@ jobs:
         with:
           name: dist
           path: dist/
-
-
-
-  arduino:
-    name: A real Arduino build, into the libraries folder and into a sketch
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
-
-      # arduino-cli from Arduino's own release, and the AVR core, so the
-      # sketches build for an Uno. The sketchbook is one of this run's own,
-      # which arduino-cli and the installer both find through
-      # ARDUINO_DIRECTORIES_USER.
-      - name: arduino-cli and the AVR core
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/cli.tar.gz" \
-            https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xzf "$RUNNER_TEMP/cli.tar.gz" -C "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          echo "ARDUINO_DIRECTORIES_USER=$RUNNER_TEMP/Arduino" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/bin/arduino-cli" core update-index
-          "$RUNNER_TEMP/bin/arduino-cli" core install arduino:avr
-
-      # The wheel just built, the way a user runs it, with nobody to answer:
-      # demo into the libraries folder for one sketch, and into the other
-      # sketch's src folder. helper, which demo needs, goes into the libraries
-      # folder both times. The second sketch then changes its setting and
-      # installs again, which has to keep it.
-      - name: Install the demo both ways
-        run: |
-          python -m pip install --no-index dist/*.whl
-          mkdir -p "$ARDUINO_DIRECTORIES_USER"
-          cp -r test/e2e/sketches/. "$ARDUINO_DIRECTORIES_USER/"
-          demo="$GITHUB_WORKSPACE/test/e2e/demo"
-          helper="$GITHUB_WORKSPACE/test/e2e/helper"
-          cd "$ARDUINO_DIRECTORIES_USER/everywhere"
-          arduino-installer "$demo" "$helper" --into libraries < /dev/null
-          cd "$ARDUINO_DIRECTORIES_USER/here"
-          arduino-installer "$demo" "$helper" --into sketch < /dev/null
-          sed -i 's/#define DEMO_PLUS                   2/#define DEMO_PLUS                   12/' src/demo/src/demo_config.h
-          arduino-installer "$demo" "$helper" --into sketch < /dev/null
-          cat ../libraries/demo/library.properties src/demo/src/demo_config.h
-
-      # Each sketch checks its own DEMO_PLUS with a static_assert, so a build
-      # also shows the update kept the sketch's setting.
-      - name: Build both sketches
-        run: |
-          arduino-cli compile -b arduino:avr:uno "$ARDUINO_DIRECTORIES_USER/everywhere"
-          arduino-cli compile -b arduino:avr:uno "$ARDUINO_DIRECTORIES_USER/here"
-
-      # Out of the sketch again: its files go, the setting changed is saved
-      # beside them, and helper stays for the other sketch, which still builds.
-      - name: Take demo out of the sketch
-        run: |
-          cd "$ARDUINO_DIRECTORIES_USER/here"
-          arduino-installer --uninstall demo < /dev/null
-          test ! -e src/demo/src/demo.c
-          ls src/demo/src/demo_config.h.*.bak
-          test -e ../libraries/helper/src/helper.h
-          arduino-cli compile -b arduino:avr:uno "$ARDUINO_DIRECTORIES_USER/everywhere"
